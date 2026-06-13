@@ -2,7 +2,7 @@
 
 ## Overview
 
-An end-to-end Snakemake pipeline for detecting polymorphic Nuclear Mitochondrial DNA insertions (NUMTs) directly from genome assemblies using Diploid Sequence Alignment (DSA). This pipeline leverages **Kou's LAST Method** ([Huang & Frith, 2026](#references)) for accurate sequence alignment and NUMT classification, and is capable of processing multi-sample and multi-haplotype cohorts (e.g., HPRC/SMAHT datasets).
+An end-to-end Snakemake pipeline for detecting polymorphic Nuclear Mitochondrial DNA insertions (NUMTs) directly from genome assemblies using Diploid Sequence Alignment (DSA). This pipeline leverages **Huang's LAST Method** ([Huang & Frith, 2026](#references)) for accurate sequence alignment and NUMT classification, and is capable of processing multi-sample and multi-haplotype cohorts (e.g., HPRC/SMAHT datasets).
 
 The pipeline autonomously executes NUMT discovery, LAST alignments, biological validation (via BLAST), cross-haplotype merging, and cross-sample population catalog generation. It is fully containerized via Docker and optimized for both Cluster environments (LSF) and Local servers.
 
