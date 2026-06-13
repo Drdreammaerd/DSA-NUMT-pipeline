@@ -2,7 +2,7 @@
 
 ## Overview
 
-An end-to-end Snakemake pipeline for detecting polymorphic Nuclear Mitochondrial DNA insertions (NUMTs) directly from genome assemblies using Diploid Sequence Alignment (DSA). This pipeline leverages **Kou's LAST Method** for accurate sequence alignment and NUMT classification, and is capable of processing multi-sample and multi-haplotype cohorts (e.g., HPRC/SMAHT datasets).
+An end-to-end Snakemake pipeline for detecting polymorphic Nuclear Mitochondrial DNA insertions (NUMTs) directly from genome assemblies using Diploid Sequence Alignment (DSA). This pipeline leverages **Kou's LAST Method** ([Huang & Frith, 2026](#references)) for accurate sequence alignment and NUMT classification, and is capable of processing multi-sample and multi-haplotype cohorts (e.g., HPRC/SMAHT datasets).
 
 The pipeline autonomously executes NUMT discovery, LAST alignments, biological validation (via BLAST), cross-haplotype merging, and cross-sample population catalog generation. It is fully containerized via Docker and optimized for both Cluster environments (LSF) and Local servers.
 
@@ -15,12 +15,15 @@ Assembly FASTA ──→ Alignment ──→ Classification ──→ Validation
 
 | Stage | Output | Description |
 |-------|--------|-------------|
-| **1: Alignment** | `.maf` & `.paf` | Aligns genome assemblies against human `chrM` using LAST. |
-| **2: Classification** | `numt_classification.tsv` | Classifies alignments into NUMT structural categories (e.g., single block, divergence gap, complex). |
+| **1: Alignment** | `.maf` & `.paf` | Aligns genome assemblies against human `chrM` using LAST (Kou's Method). |
+| **2: Classification** | `numt_classification.tsv` | Classifies alignments into NUMT structural categories (e.g., single block, divergence gap, complex) using custom structural logic. |
 | **3: Validation** | `numt_classification.annotated.tsv` | Biologically validates NUMT sequences against `chrM` (blastn) and mitochondrial proteins (blastx). |
 | **4: Liftover** | `numt_liftover.tsv` | Lifts NUMT loci from the specific assembly coordinates back to GRCh38. |
 | **5: Haplotype Merge** | `sample.merged.tsv` | Merges maternal and paternal NUMT calls for a single donor to determine zygosity (HOM/HET). |
 | **6: Callset** | `HPRC_NUMT_callset.tsv/vcf/bed`| Cross-sample integration to produce the final population frequency catalog. |
+
+> [!NOTE]
+> For a detailed explanation of all output columns, Kou's structural categories (A-E), and VCF attributes across the pipeline stages, please see the **[DSA-NUMT Data Dictionary](docs/NUMT_DSA_Dictionary.md)**.
 
 ## Quick Start
 
@@ -55,7 +58,20 @@ samples:
     maternal_chain: "/path/to/HG002_maternal_to_hg38.chain"
 
 # ==========================================
-# 3. System Settings (Do not change)
+# 3. Reference Catalog (Auto-Generation)
+# ==========================================
+# If 'prebuilt_numts' is empty, the pipeline will automatically run DSA 
+# on 'target_fasta' to generate the reference NUMT catalog from scratch.
+paths:
+  target_fasta: "/path/to/hg38.fa"
+  chain_dir: "/path/to/chains"
+
+reference_comparison:
+  prebuilt_numts: "" 
+  mode: "annotate"
+
+# ==========================================
+# 4. System Settings (Do not change)
 # ==========================================
 docker_image: "dreammaerd/numt_dsa:v1"
 ```
@@ -86,3 +102,9 @@ bash Pipeline/run_local.sh --configfile config.yaml
 - **Containerized:** The pipeline is entirely encapsulated within the `dreammaerd/numt_dsa:v1` Docker image. This includes Snakemake, Python, R, LAST, and BLAST.
 - **Pre-built Indices:** The Docker image has `chrM.fa` and `mito_proteins.fa` indices permanently baked in, preventing read-only filesystem errors during execution.
 - **No Local Dependencies:** Zero local packages are required other than Docker.
+
+## References
+
+1. **Kou's LAST Method**:
+   Huang M, Frith MC. *Probability-Based Sequence Comparison Finds Pre-Eutherian Nuclear Mitochondrial DNA Segments in Mammalian Genomes.* J Comput Biol. 2026 Feb 2:15578666261416560. doi: [10.1177/15578666261416560](https://doi.org/10.1177/15578666261416560).
+   GitHub Repository: [https://github.com/Koumokuyou/NUMTs](https://github.com/Koumokuyou/NUMTs)
