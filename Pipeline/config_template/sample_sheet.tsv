@@ -1,0 +1,3 @@
+DonorID	Haplotype	Assembly_Fasta_Path	Fraction
+HG005	maternal	/path/to/HG005.maternal.fa	0.5
+HG005	paternal	/path/to/HG005.paternal.fa	0.5

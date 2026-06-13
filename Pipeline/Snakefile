@@ -1,0 +1,302 @@
+import os
+import pandas as pd
+
+configfile: "config/config.yaml"
+OUT_DIR = config.get("output_base", "results")
+DOCKER_IMAGE = config.get("docker_image", "dreammaerd/numt_dsa:v1")
+PIPELINE_DIR = workflow.basedir
+
+SAMPLE_SHEET = pd.read_csv(config["sample_sheet"], sep="\t")
+DONORS = SAMPLE_SHEET['DonorID'].unique().tolist()
+SAMPLES = (SAMPLE_SHEET['DonorID'] + "." + SAMPLE_SHEET['Haplotype']).tolist()
+# Create a mapping from sample (e.g. HG002.maternal) to its Assembly Fasta path
+SAMPLE_TO_FASTA = {f"{row['DonorID']}.{row['Haplotype']}": row['Assembly_Fasta_Path'] for _, row in SAMPLE_SHEET.iterrows()}
+
+CHAIN_DIR = config["paths"]["chain_dir"]
+
+PREBUILT_REF = config.get("reference_comparison", {}).get("prebuilt_numts", "")
+if PREBUILT_REF:
+    REF_NUMTS = PREBUILT_REF
+else:
+    REF_NUMTS = OUT_DIR + "/01_classification/hg38.numt_classification.tsv"
+    SAMPLE_TO_FASTA["hg38"] = config["paths"]["target_fasta"]
+
+BLAST_ENABLE = config.get("blast_validation", {}).get("enable", False)
+BLAST_MODE = config.get("blast_validation", {}).get("mode", "auto")
+BLAST_THREADS = config.get("blast_validation", {}).get("threads", 4)
+DSA_MODE = config.get("dsa_mode", "both")
+
+if BLAST_MODE == "auto":
+    BLAST_MODE = DSA_MODE
+
+def get_chain_dir(sample):
+    return sample.replace(".", "_") + "_hg38"
+
+rule all:
+    input:
+        OUT_DIR + "/05_final_callset/HPRC_NUMT_callset.tsv"
+
+rule build_mito_dbs:
+    input:
+        mito_dna=f"{PIPELINE_DIR}/resources/chrM.fa",
+        mito_prot=f"{PIPELINE_DIR}/resources/mito_proteins.fa"
+    output:
+        genodb_prj="data/lastdb/mitogenodb.prj",
+        prodb_prj="data/lastdb/mitoprodb.prj",
+        mtgeno2pro_maf="data/lastdb/mtgeno2pro.maf"
+    resources:
+        mem_mb=8000,
+        docker=DOCKER_IMAGE
+    shell:
+        """
+        mkdir -p data/lastdb
+        lastdb --circular -c data/lastdb/mitogenodb {input.mito_dna}
+        lastdb -q -c data/lastdb/mitoprodb {input.mito_prot}
+        last-train --codon data/lastdb/mitoprodb {input.mito_dna} > data/lastdb/mtgeno2pro.train
+        lastal -D1e10 -p data/lastdb/mtgeno2pro.train data/lastdb/mitoprodb {input.mito_dna} > {output.mtgeno2pro_maf}
+        """
+
+rule filter_chrm:
+    input:
+        fasta=lambda wildcards: SAMPLE_TO_FASTA[wildcards.sample]
+    output:
+        nuclear_fasta=temp("data/maf/{sample}_no_chrM.fa")
+    resources:
+        mem_mb=8000,
+        docker=DOCKER_IMAGE
+    shell:
+        """
+        if [[ "{input.fasta}" == *.gz ]]; then
+            zcat {input.fasta} | awk 'BEGIN{{p=1}} /^>chrM/ {{p=0}} /^>/ && !/^>chrM/ {{p=1}} p==1' > {output.nuclear_fasta}
+        else
+            awk 'BEGIN{{p=1}} /^>chrM/ {{p=0}} /^>/ && !/^>chrM/ {{p=1}} p==1' {input.fasta} > {output.nuclear_fasta}
+        fi
+        """
+
+rule dsa_dna:
+    input:
+        fasta="data/maf/{sample}_no_chrM.fa",
+        genodb="data/lastdb/mitogenodb.prj",
+        rrna_bed=f"{PIPELINE_DIR}/resources/hg38_rRNA.bed"
+    output:
+        maf=temp("data/maf/{sample}.nu2mitogeno.maf"),
+        bed=temp("data/maf/{sample}.nu2mitogeno_movrrna.bed")
+    resources:
+        mem_mb=64000,
+        docker=DOCKER_IMAGE
+    threads: 4
+    shell:
+        """
+        last-train -S0 --pid=70 --sample-number=0 -P{threads} data/lastdb/mitogenodb {input.fasta} > data/maf/{wildcards.sample}.nu2mitogeno.train
+        lastal -P{threads} -H1 -J1 -R00 -p data/maf/{wildcards.sample}.nu2mitogeno.train data/lastdb/mitogenodb {input.fasta} > {output.maf}
+        maf-Bed {output.maf} > data/maf/{wildcards.sample}.nu2mitogeno.bed
+        remvrrna data/maf/{wildcards.sample}.nu2mitogeno.bed {input.rrna_bed} > {output.bed}
+        rm -f data/maf/{wildcards.sample}.nu2mitogeno.train data/maf/{wildcards.sample}.nu2mitogeno.bed
+        """
+
+rule dsa_protein:
+    input:
+        fasta="data/maf/{sample}_no_chrM.fa",
+        prodb="data/lastdb/mitoprodb.prj",
+        rrna_bed=f"{PIPELINE_DIR}/resources/hg38_rRNA.bed",
+        mtgeno2pro_maf="data/lastdb/mtgeno2pro.maf"
+    output:
+        maf=temp("data/maf/{sample}.nu2mitopro.maf"),
+        bed=temp("data/maf/{sample}.nu2mitopro_movrrna_fix.bed")
+    resources:
+        mem_mb=64000,
+        docker=DOCKER_IMAGE
+    threads: 4
+    shell:
+        """
+        last-train --codon --pid=70 --sample-number=0 -P{threads} data/lastdb/mitoprodb {input.fasta} > data/maf/{wildcards.sample}.nu2mitopro.train
+        lastal -P{threads} -H1 -K1 -m500 -p data/maf/{wildcards.sample}.nu2mitopro.train data/lastdb/mitoprodb {input.fasta} > {output.maf}
+        maf-Bed {output.maf} > data/maf/{wildcards.sample}.nu2mitopro.bed
+        remvrrna data/maf/{wildcards.sample}.nu2mitopro.bed {input.rrna_bed} > data/maf/{wildcards.sample}.nu2mitopro_movrrna.bed
+        fix-protein-strand {input.mtgeno2pro_maf} data/maf/{wildcards.sample}.nu2mitopro_movrrna.bed > {output.bed}
+        rm -f data/maf/{wildcards.sample}.nu2mitopro.train data/maf/{wildcards.sample}.nu2mitopro.bed data/maf/{wildcards.sample}.nu2mitopro_movrrna.bed
+        """
+
+def get_dsa_beds(wildcards):
+    beds = []
+    if DSA_MODE in ("dna", "both"):
+        beds.append(f"data/maf/{wildcards.sample}.nu2mitogeno_movrrna.bed")
+    if DSA_MODE in ("protein", "both"):
+        beds.append(f"data/maf/{wildcards.sample}.nu2mitopro_movrrna_fix.bed")
+    return beds
+
+rule dsa_merge:
+    input:
+        beds=get_dsa_beds
+    output:
+        final_bed="data/maf/final_numts_{sample}_Numts_filtered.bed"
+    params:
+        prefix="data/maf/final_numts_{sample}"
+    resources:
+        mem_mb=8000,
+        docker=DOCKER_IMAGE
+    shell:
+        """
+        BEDS=({input.beds})
+        if [ "${{#BEDS[@]}}" -eq 2 ]; then
+            merge "${{BEDS[0]}}" "${{BEDS[1]}}" {params.prefix}
+        else
+            cp "${{BEDS[0]}}" {output.final_bed}
+        fi
+        """
+
+def get_dsa_mafs(wildcards):
+    mafs = []
+    if DSA_MODE in ("dna", "both"):
+        mafs.append(f"data/maf/{wildcards.sample}.nu2mitogeno.maf")
+    if DSA_MODE in ("protein", "both"):
+        mafs.append(f"data/maf/{wildcards.sample}.nu2mitopro.maf")
+    return mafs
+
+rule maf_to_paf_hprc:
+    input:
+        mafs=get_dsa_mafs
+    output:
+        paf="data/paf/{sample}_combined.paf"
+    resources:
+        mem_mb=8000,
+        docker=DOCKER_IMAGE
+    shell:
+        """
+        rm -f {output.paf}
+        for maf in {input.mafs}; do
+            temp_paf=${{maf%.maf}}.paf
+            python3 {PIPELINE_DIR}/scripts/01_maf_to_paf.py --maf $maf --out $temp_paf
+            cat $temp_paf >> {output.paf}
+            rm -f $temp_paf
+        done
+        """
+
+rule classify_numts:
+    input:
+        paf="data/paf/{sample}_combined.paf",
+        kou_bed="data/maf/final_numts_{sample}_Numts_filtered.bed"
+    output:
+        tsv=OUT_DIR + "/01_classification/{sample}.numt_classification.tsv",
+        complex_tsv=OUT_DIR + "/01_classification/{sample}.complex_sv_numts.tsv"
+    params:
+        outdir=OUT_DIR + "/01_classification"
+    resources:
+        mem_mb=32000,
+        docker=DOCKER_IMAGE
+    shell:
+        "python3 {PIPELINE_DIR}/scripts/02_classify_numts.py --sample {wildcards.sample} --paf {input.paf} --bed {input.kou_bed} --outdir {params.outdir}"
+
+rule blast_validation:
+    input:
+        tsv=OUT_DIR + "/01_classification/{sample}.numt_classification.tsv",
+        fasta=lambda wildcards: SAMPLE_TO_FASTA[wildcards.sample]
+    output:
+        annotated_tsv=OUT_DIR + "/01_classification/{sample}.numt_classification.annotated.tsv"
+    params:
+        blast_enable=BLAST_ENABLE,
+        blast_mode=BLAST_MODE
+    resources:
+        mem_mb=32000,
+        docker=DOCKER_IMAGE
+    threads: BLAST_THREADS
+    shell:
+        """
+        if [ "{params.blast_enable}" = "True" ]; then
+            python3 {PIPELINE_DIR}/scripts/02b_blast_validation.py --input_tsv {input.tsv} --fasta {input.fasta} --out_tsv {output.annotated_tsv} --mode {params.blast_mode} --threads {threads}
+        else
+            cp {input.tsv} {output.annotated_tsv}
+        fi
+        """
+
+rule prep_liftover_bed:
+    input:
+        tsv=OUT_DIR + "/01_classification/{sample}.numt_classification.annotated.tsv"
+    output:
+        bed=temp(OUT_DIR + "/02_liftover/{sample}_input.bed")
+    resources:
+        mem_mb=4000,
+        docker=DOCKER_IMAGE
+    shell:
+        "tail -n +2 {input.tsv} | awk -F'\t' '{{print $$1\"\t\"$$2\"\t\"$$3\"\t\"NR}}' > {output.bed}"
+
+rule run_liftover:
+    input:
+        bed=OUT_DIR + "/02_liftover/{sample}_input.bed",
+        chain=lambda wildcards: f"{CHAIN_DIR}/{get_chain_dir(wildcards.sample)}/chainnet/liftover.chain"
+    output:
+        lo_bed=temp(OUT_DIR + "/02_liftover/{sample}_hg38_raw.bed")
+    params:
+        r_script=f"{PIPELINE_DIR}/scripts/03_liftover.R"
+    resources:
+        mem_mb=16000,
+        docker=DOCKER_IMAGE
+    shell:
+        "Rscript {params.r_script} --bed_file {input.bed} --chain {input.chain} --output {output.lo_bed} --id_col 4"
+
+rule join_liftover:
+    input:
+        lo_bed=OUT_DIR + "/02_liftover/{sample}_hg38_raw.bed",
+        tsv=OUT_DIR + "/01_classification/{sample}.numt_classification.annotated.tsv"
+    output:
+        final_tsv=OUT_DIR + "/02_liftover/{sample}.classification_hg38.tsv"
+    resources:
+        mem_mb=8000,
+        docker=DOCKER_IMAGE
+    shell:
+        """
+        ORIG_HEADER=$(head -1 {input.tsv})
+        printf 'hg38_chr\thg38_start\thg38_end\t%s\n' "$ORIG_HEADER" > {output.final_tsv}
+        while IFS=$'\t' read -r hg38_chr hg38_start hg38_end row_id; do
+            class_line=$(sed -n "$((row_id + 1))p" {input.tsv})
+            if [[ -n "$class_line" ]]; then
+                printf '%s\t%s\t%s\t%s\n' "$hg38_chr" "$hg38_start" "$hg38_end" "$class_line"
+            fi
+        done < {input.lo_bed} >> {output.final_tsv}
+        """
+
+rule merge_haplotypes:
+    input:
+        mat=OUT_DIR + "/02_liftover/{indiv}.maternal.classification_hg38.tsv",
+        pat=OUT_DIR + "/02_liftover/{indiv}.paternal.classification_hg38.tsv"
+    output:
+        tsv=OUT_DIR + "/03_per_individual/{indiv}.merged_haplotypes.tsv"
+    resources:
+        mem_mb=8000,
+        docker=DOCKER_IMAGE
+    shell:
+        "python3 {PIPELINE_DIR}/scripts/04_merge_haplotypes.py --mat {input.mat} --pat {input.pat} --out {output.tsv}"
+
+rule cross_sample_merge:
+    input:
+        indivs=expand(OUT_DIR + "/03_per_individual/{indiv}.merged_haplotypes.tsv", indiv=DONORS),
+        ref=REF_NUMTS,
+        sample_sheet=config["sample_sheet"]
+    output:
+        unified=OUT_DIR + "/04_cross_sample/unified_callset.tsv",
+        compact=OUT_DIR + "/04_cross_sample/unified_callset_compact.tsv"
+    params:
+        mode=config.get("reference_comparison", {}).get("mode", "annotate"),
+        outdir=OUT_DIR + "/04_cross_sample",
+        indiv_dir=OUT_DIR + "/03_per_individual"
+    resources:
+        mem_mb=16000,
+        docker=DOCKER_IMAGE
+    shell:
+        "python3 {PIPELINE_DIR}/scripts/05_cross_sample_merge.py --sample_sheet {input.sample_sheet} --ref_tsv {input.ref} --mode {params.mode} --outdir {params.outdir} --indiv_dir {params.indiv_dir}"
+
+rule final_callset:
+    input:
+        unified=OUT_DIR + "/04_cross_sample/unified_callset.tsv",
+        sample_sheet=config["sample_sheet"]
+    output:
+        tsv=OUT_DIR + "/05_final_callset/HPRC_NUMT_callset.tsv",
+        bed=OUT_DIR + "/05_final_callset/HPRC_NUMT_callset.bed",
+        vcf=OUT_DIR + "/05_final_callset/HPRC_NUMT_callset.vcf"
+    params:
+        outdir=OUT_DIR + "/05_final_callset"
+    resources:
+        mem_mb=16000,
+        docker=DOCKER_IMAGE
+    shell:
+        "python3 {PIPELINE_DIR}/scripts/06_generate_callset.py --sample_sheet {input.sample_sheet} --input_tsv {input.unified} --outdir {params.outdir}"

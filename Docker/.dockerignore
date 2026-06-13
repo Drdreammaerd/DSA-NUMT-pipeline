@@ -1,0 +1,9 @@
+**/._*
+**/.DS_Store
+data/
+results/
+.snakemake/
+.nextflow/
+.nextflow.log*
+*.log
+*.err
