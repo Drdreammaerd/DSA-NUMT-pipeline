@@ -23,7 +23,7 @@ This is the foundational file containing all NUMTs identified in a single haplot
 | `chrM_start` | Start coordinate on the mitochondrial genome. |
 | `chrM_end` | End coordinate on the mitochondrial genome. |
 | `chrM_span` | Span on the mitochondrial genome. Can be negative if inserted in reverse orientation. |
-| `numt_category` | Structural category assigned by Kou's logic. *See NUMT Category Definitions below.* |
+| `numt_category` | Structural category assigned by Huang's logic. *See NUMT Category Definitions below.* |
 | `strand` | Orientation of the insertion (`+` or `-`). |
 | `valid_blastn` | Validated by DNA sequence homology (`blastn`) against `chrM` (`YES`/`NO`). |
 | `valid_blastx` | Validated by Protein sequence homology (`blastx`) against `mito_proteins` (`YES`/`NO`). |

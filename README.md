@@ -10,12 +10,12 @@ The pipeline autonomously executes NUMT discovery, LAST alignments, biological v
 
 ```
 Assembly FASTA ──→ Alignment ──→ Classification ──→ Validation ──→ Merge (Sample) ──→ Merge (Population)
-                   (LAST)        (Kou's Method)     (BLAST)        (Maternal+Paternal)
+                   (LAST)        (Huang's Method)     (BLAST)        (Maternal+Paternal)
 ```
 
 | Stage | Output | Description |
 |-------|--------|-------------|
-| **1: Alignment** | `.maf` & `.paf` | Aligns genome assemblies against human `chrM` using LAST (Kou's Method). |
+| **1: Alignment** | `.maf` & `.paf` | Aligns genome assemblies against human `chrM` using LAST (Huang's Method). |
 | **2: Classification** | `numt_classification.tsv` | Classifies alignments into NUMT structural categories (e.g., single block, divergence gap, complex) using custom structural logic. |
 | **3: Validation** | `numt_classification.annotated.tsv` | Biologically validates NUMT sequences against `chrM` (blastn) and mitochondrial proteins (blastx). |
 | **4: Liftover** | `numt_liftover.tsv` | Lifts NUMT loci from the specific assembly coordinates back to GRCh38. |
@@ -23,7 +23,7 @@ Assembly FASTA ──→ Alignment ──→ Classification ──→ Validation
 | **6: Callset** | `HPRC_NUMT_callset.tsv/vcf/bed`| Cross-sample integration to produce the final population frequency catalog. |
 
 > [!NOTE]
-> For a detailed explanation of all output columns, Kou's structural categories (A-E), and VCF attributes across the pipeline stages, please see the **[DSA-NUMT Data Dictionary](docs/NUMT_DSA_Dictionary.md)**.
+> For a detailed explanation of all output columns, Huang's structural categories (A-E), and VCF attributes across the pipeline stages, please see the **[DSA-NUMT Data Dictionary](docs/NUMT_DSA_Dictionary.md)**.
 
 ## Quick Start
 
@@ -105,6 +105,6 @@ bash Pipeline/run_local.sh --configfile config.yaml
 
 ## References
 
-1. **Kou's LAST Method**:
+1. **Huang's LAST Method**:
    Huang M, Frith MC. *Probability-Based Sequence Comparison Finds Pre-Eutherian Nuclear Mitochondrial DNA Segments in Mammalian Genomes.* J Comput Biol. 2026 Feb 2:15578666261416560. doi: [10.1177/15578666261416560](https://doi.org/10.1177/15578666261416560).
    GitHub Repository: [https://github.com/Koumokuyou/NUMTs](https://github.com/Koumokuyou/NUMTs)
