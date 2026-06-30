@@ -53,8 +53,8 @@ def parse_paf(paf_path):
             if parts[5] != 'chrM':
                 continue
 
-            # Filter noise alignments < 200bp to avoid fake structural variants
-            if int(parts[10]) < 200:
+            # Filter noise alignments < 50bp to avoid fake structural variants but keep intermediate NUMT segments
+            if int(parts[10]) < 50:
                 continue
             
             alns.append({

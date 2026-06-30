@@ -8,53 +8,33 @@ library(GenomicRanges)
 options(scipen=999)
 
 option_list <- list(
-  make_option(c("-b", "--bed_file"),
-              type="character",
-              help="Path to bed file"), 
-  make_option(c("-t", "--threads"),
-              type="integer",
-              help="number of threads"),
-  make_option(c("-c", "--chain"),
-              type="character",
-              help="Path to chain file"),
-  make_option(c("-o", "--output"),
-              type="character",
-              help="output file"),
-  make_option(c("-i", "--id_col"),
-              type="integer", default=4,
-              help="Column number for ID (default: 4)")
+  make_option(c("-b", "--bed_file"), type="character", help="Path to bed file (or TSV)"), 
+  make_option(c("-c", "--chain"), type="character", help="Path to chain file"),
+  make_option(c("-o", "--output"), type="character", help="output file")
 )
+opt_parser <- OptionParser(option_list=option_list)
+opt <- parse_args(opt_parser)
 
-opt <- parse_args(OptionParser(option_list=option_list))
-
-# Validate required arguments
-if (is.null(opt$bed_file)) {
-  stop("Missing -b or --bed_file argument. Please provide the input bed file path.")
-}
-if (is.null(opt$chain)) {
-  stop("Missing -c or --chain argument. Please provide the input chain file path.")
-}
-if (is.null(opt$output)) {
-  stop("Missing -o or --output argument. Please provide the output bed file path.")
-}
+if (is.null(opt$bed_file)) stop("Missing -b")
+if (is.null(opt$chain)) stop("Missing -c")
+if (is.null(opt$output)) stop("Missing -o")
 
 bed_file_path <- opt$bed_file
 chain_path <- opt$chain
 output_path <- opt$output
-id_col <- opt$id_col
 
-# Read in the BED file
-bed_data_raw <- fread(bed_file_path, header = FALSE, sep = "\t")
-
-# Check if id_col is valid
-if (id_col > ncol(bed_data_raw)) {
-  stop(paste("The ID column specified (", id_col, ") is out of bounds for the input file which has", ncol(bed_data_raw), "columns."))
+# Read in the TSV
+bed_data_raw <- fread(bed_file_path, header = TRUE, sep = "\t")
+if (nrow(bed_data_raw) == 0) {
+  fwrite(bed_data_raw, output_path, sep = "\t", col.names = TRUE)
+  quit(save="no")
 }
-bed_data <- bed_data_raw[, c(1:3, id_col), with = FALSE]
 
-# Define BED file column names
-bed_columns <- c("chr", "start", "end","ID")
-colnames(bed_data) <- bed_columns
+# Generate an internal ID
+bed_data_raw$INTERNAL_ID <- 1:nrow(bed_data_raw)
+
+bed_data <- bed_data_raw[, c("contig", "locus_start", "locus_end", "INTERNAL_ID"), with = FALSE]
+colnames(bed_data) <- c("chr", "start", "end", "ID")
 
 # Import the chain file
 chain <- rtracklayer::import(chain_path, format = "chain")
@@ -65,8 +45,6 @@ grange_bed <- makeGRangesFromDataFrame(bed_data, keep.extra.columns = TRUE)
 # Perform liftover
 lifted <- liftOver(grange_bed, chain)
 
-# Group-aware span: for each original region, take overall span per target chromosome
-# This prevents fragmentation from splitting a single NUMT into tiny pieces
 result_list <- list()
 for (i in seq_along(lifted)) {
   gr <- lifted[[i]]
@@ -75,7 +53,6 @@ for (i in seq_along(lifted)) {
   original_id <- grange_bed$ID[i]
   original_size <- width(grange_bed[i])
   
-  # Group fragments by target chromosome
   chr_groups <- split(gr, seqnames(gr))
   for (chr_name in names(chr_groups)) {
     grp <- chr_groups[[chr_name]]
@@ -84,8 +61,6 @@ for (i in seq_along(lifted)) {
     span_end <- max(end(grp))
     lifted_size <- span_end - span_start
     
-    # Expand step: if lifted region is < 50% of original size, 
-    # expand symmetrically around center to match original size
     if (lifted_size < original_size * 0.5) {
       center <- as.integer((span_start + span_end) / 2)
       half_size <- as.integer(ceiling(original_size / 2))
@@ -94,20 +69,32 @@ for (i in seq_along(lifted)) {
     }
     
     result_list[[length(result_list) + 1]] <- data.table(
-      seqnames = chr_name,
-      start = span_start,
-      end = span_end,
-      ID = original_id
+      hg38_chr = as.character(chr_name),
+      hg38_start = span_start,
+      hg38_end = span_end,
+      INTERNAL_ID = original_id
     )
   }
 }
 
 if (length(result_list) > 0) {
   lifted_bed <- rbindlist(result_list)
+  # Merge with original data
+  merged_data <- merge(lifted_bed, bed_data_raw, by="INTERNAL_ID", all.x=TRUE)
+  merged_data[, INTERNAL_ID := NULL]
+  
+  # Ensure column order: hg38_chr, hg38_start, hg38_end, ... then original cols
+  orig_cols <- setdiff(colnames(merged_data), c("hg38_chr", "hg38_start", "hg38_end"))
+  final_cols <- c("hg38_chr", "hg38_start", "hg38_end", orig_cols)
+  merged_data <- merged_data[, ..final_cols]
 } else {
-  lifted_bed <- data.table(seqnames = character(), start = integer(), 
-                           end = integer(), ID = character())
+  # Empty output with correct header
+  orig_cols <- colnames(bed_data_raw)
+  orig_cols <- setdiff(orig_cols, "INTERNAL_ID")
+  final_cols <- c("hg38_chr", "hg38_start", "hg38_end", orig_cols)
+  merged_data <- data.table(matrix(ncol = length(final_cols), nrow = 0))
+  colnames(merged_data) <- final_cols
 }
 
 # Write the output to a file
-fwrite(lifted_bed, output_path, sep = "\t", col.names = FALSE, row.names = FALSE)
+fwrite(merged_data, output_path, sep = "\t", col.names = TRUE, row.names = FALSE)

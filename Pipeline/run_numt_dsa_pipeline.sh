@@ -57,7 +57,7 @@ OUTPUT_BASE_RAW="$(grep 'output_base:' "$CONFIG_FILE" | awk '{print $2}' | tr -d
 OUTPUT_BASE=$(resolve_path "$OUTPUT_BASE_RAW")
 
 # Docker Images
-DOCKER_IMAGE="dreammaerd/numt_dsa:v1.3"
+DOCKER_IMAGE="dreammaerd/numt-orchestrator:v1.4"
 NFLO_IMAGE="dreammaerd/nf-lo:v3"
 
 mkdir -p "$OUTPUT_BASE/logs"
@@ -176,7 +176,7 @@ echo "  - Submitted Orchestrator -> Job ID: ${ORCH_JOB_ID}"
 echo ""
 echo "[3] Submitting SVbyEye Plotter..."
 
-PLOTTER_DOCKER="dreammaerd/numt-plotter:v1.3"
+PLOTTER_DOCKER="dreammaerd/numt-plotter:v1.4"
 
 bsub -J "DSA_NUMT_Plotter" \
      -o "${OUTPUT_BASE}/logs/SVbyEye_Plotter_%J.log" -e "${OUTPUT_BASE}/logs/SVbyEye_Plotter_%J.err" \

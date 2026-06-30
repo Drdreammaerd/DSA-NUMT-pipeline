@@ -17,9 +17,9 @@ PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 
 MATCH_DIST = 2000  # bp tolerance for position matching
 MT_COORD_TOLERANCE = 100  # bp tolerance for mt_structure segment matching
-COMPLEX_CATS = {"C_inversion", "D_tandem_repeat", "E_complex_chimeric"}
-CAT_RANK = {"A_single_block": 0, "B_divergence_gap": 1, "C_inversion": 2,
-            "D_tandem_repeat": 3, "E_complex_chimeric": 4}
+COMPLEX_CATS = {"C_tandem_repeat", "D_complex_structural_variant"}
+CAT_RANK = {"A_single_block": 0, "B_divergence_gap": 1,
+            "C_tandem_repeat": 2, "D_complex_structural_variant": 3}
 
 
 # ── Parsing ──

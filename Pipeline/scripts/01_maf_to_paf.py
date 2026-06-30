@@ -119,14 +119,36 @@ def _convert_block(s_lines, score):
         q_start = q_srcsize - q_start_raw - q_aln_size
         q_end = q_srcsize - q_start_raw
     
-    # Count matches and block length
+    # Count matches and block length, and build CIGAR
     matches = 0
     block_len = 0
+    cigar = ""
+    c_match = 0
+    c_del = 0
+    c_ins = 0
+
     for tc, qc in zip(t_seq, q_seq):
         if tc != '-' or qc != '-':
             block_len += 1
         if tc != '-' and qc != '-' and tc.upper() == qc.upper():
             matches += 1
+            
+        if tc != '-' and qc != '-':
+            if c_del > 0: cigar += f"{c_del}D"; c_del = 0
+            if c_ins > 0: cigar += f"{c_ins}I"; c_ins = 0
+            c_match += 1
+        elif tc == '-' and qc != '-': # Insertion in query
+            if c_match > 0: cigar += f"{c_match}M"; c_match = 0
+            if c_del > 0: cigar += f"{c_del}D"; c_del = 0
+            c_ins += 1
+        elif tc != '-' and qc == '-': # Deletion in query
+            if c_match > 0: cigar += f"{c_match}M"; c_match = 0
+            if c_ins > 0: cigar += f"{c_ins}I"; c_ins = 0
+            c_del += 1
+
+    if c_match > 0: cigar += f"{c_match}M"
+    if c_del > 0: cigar += f"{c_del}D"
+    if c_ins > 0: cigar += f"{c_ins}I"
     
     # Mapping quality (use score as proxy, cap at 255)
     mapq = min(255, max(0, score // 10))
@@ -136,7 +158,7 @@ def _convert_block(s_lines, score):
         f"{q_name}\t{q_srcsize}\t{q_start}\t{q_end}\t{strand}\t"
         f"{t_name}\t{t_srcsize}\t{t_start}\t{t_end}\t"
         f"{matches}\t{block_len}\t{mapq}\t"
-        f"AS:i:{score}"
+        f"AS:i:{score}\tcg:Z:{cigar}"
     )
     
     return paf
