@@ -182,12 +182,13 @@ bsub -J "DSA_NUMT_Plotter" \
      -o "${OUTPUT_BASE}/logs/SVbyEye_Plotter_%J.log" -e "${OUTPUT_BASE}/logs/SVbyEye_Plotter_%J.err" \
      -G "$LSF_GROUP" -q "$LSF_QUEUE" -n 16 \
      -w "done($ORCH_JOB_ID)" \
-     -R "span[hosts=1] rusage[mem=4000]" \
+     -M 64GB \
+     -R "span[hosts=1] rusage[mem=64GB]" \
      -a "docker(${PLOTTER_DOCKER})" \
-     "python3 /opt/numt-dsa-pipeline/visualization/generate_svbyeye_plots.py \
+     bash -c "python3 /opt/numt-dsa-pipeline/visualization/generate_svbyeye_plots.py \
           --results-dir \"${OUTPUT_BASE}\" \
           --out-dir \"${OUTPUT_BASE}/SVbyEye_Plots\" \
-          --r-script /opt/numt-dsa-pipeline/visualization/plot_svbyeye_single.R \
+          --r-script \"/opt/numt-dsa-pipeline/visualization/plot_svbyeye_single.R\" \
           --cores 16"
 
 echo ""
