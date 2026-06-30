@@ -17,11 +17,11 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 
 INDIVIDUALS = []
-MATCH_DIST = 2000
+MATCH_DIST = 1000
 MT_COORD_TOLERANCE = 100
-COMPLEX_CATS = {"C_inversion", "D_tandem_repeat", "E_complex_chimeric"}
-CAT_RANK = {"A_single_block": 0, "B_divergence_gap": 1, "C_inversion": 2,
-            "D_tandem_repeat": 3, "E_complex_chimeric": 4}
+COMPLEX_CATS = {"C_tandem_repeat", "D_complex_structural_variant"}
+CAT_RANK = {"A_single_block": 0, "B_divergence_gap": 1,
+            "C_tandem_repeat": 2, "D_complex_structural_variant": 3}
 
 
 # ── Parsing ──
@@ -176,11 +176,17 @@ def summarize_cluster(cluster, ref_match):
     
     # Category per individual
     cat_list = []
+    mat_cat_list = []
+    pat_cat_list = []
     for indiv in INDIVIDUALS:
         if indiv in indiv_data:
             cat_list.append(indiv_data[indiv].get('consensus_category', '?'))
+            mat_cat_list.append(indiv_data[indiv].get('mat_category', '.'))
+            pat_cat_list.append(indiv_data[indiv].get('pat_category', '.'))
         else:
             cat_list.append('.')
+            mat_cat_list.append('.')
+            pat_cat_list.append('.')
     
     # Reference annotation
     if ref_match:
@@ -288,6 +294,8 @@ def summarize_cluster(cluster, ref_match):
         **{f'{indiv}_zygosity': z for indiv, z in zip(INDIVIDUALS, zygosity_list)},
         # Per-individual category
         **{f'{indiv}_category': c for indiv, c in zip(INDIVIDUALS, cat_list)},
+        **{f'{indiv}_mat_category': c for indiv, c in zip(INDIVIDUALS, mat_cat_list)},
+        **{f'{indiv}_pat_category': c for indiv, c in zip(INDIVIDUALS, pat_cat_list)},
         # Per-individual mt_structure
         **{f'{indiv}_mt_structure': m for indiv, m in zip(INDIVIDUALS, mt_structures)},
     }
@@ -446,6 +454,8 @@ def main():
         header_cols.extend([
             f'{indiv}_zygosity',
             f'{indiv}_category',
+            f'{indiv}_mat_category',
+            f'{indiv}_pat_category',
         ])
     # mt_structure columns last (they're wide)
     for indiv in INDIVIDUALS:
@@ -458,7 +468,7 @@ def main():
             f.write('\t'.join(str(u.get(h, '')) for h in header_cols) + '\n')
     
     # Also write a compact summary (no mt_structure)
-    compact_cols = header_cols[:14] + [f'{i}_zygosity' for i in INDIVIDUALS] + [f'{i}_category' for i in INDIVIDUALS]
+    compact_cols = header_cols[:14] + [f'{i}_zygosity' for i in INDIVIDUALS] + [f'{i}_category' for i in INDIVIDUALS] + [f'{i}_mat_category' for i in INDIVIDUALS] + [f'{i}_pat_category' for i in INDIVIDUALS]
     compact_path = os.path.join(args.outdir, "unified_callset_compact.tsv")
     with open(compact_path, 'w') as f:
         f.write('\t'.join(compact_cols) + '\n')
