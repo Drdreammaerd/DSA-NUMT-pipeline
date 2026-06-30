@@ -1,0 +1,2 @@
+FROM dreammaerd/numt-plotter:v1
+COPY Pipeline/visualization /opt/numt-plotter/visualization/

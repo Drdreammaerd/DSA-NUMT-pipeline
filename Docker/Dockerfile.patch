@@ -1,0 +1,2 @@
+FROM dreammaerd/numt_dsa:v1.1
+COPY Pipeline/ /opt/numt-dsa-pipeline/

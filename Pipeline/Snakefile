@@ -3,8 +3,8 @@ import pandas as pd
 
 configfile: "config/config.yaml"
 OUT_DIR = config.get("output_base", "results")
-DOCKER_IMAGE = config.get("docker_image", "dreammaerd/numt_dsa:v1.1")
-PLOTTER_DOCKER_IMAGE = config.get("plotter_image", "dreammaerd/numt-plotter:v1")
+DOCKER_IMAGE = config.get("docker", {}).get("numt_dsa", config.get("docker_image", "dreammaerd/numt_dsa:v1.2"))
+PLOTTER_DOCKER_IMAGE = config.get("docker", {}).get("plotter_image", config.get("plotter_image", "dreammaerd/numt-plotter:v1.1"))
 PIPELINE_DIR = workflow.basedir
 
 SAMPLE_SHEET = pd.read_csv(config["sample_sheet"], sep="\t")

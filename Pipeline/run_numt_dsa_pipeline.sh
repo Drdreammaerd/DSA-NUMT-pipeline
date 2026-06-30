@@ -57,7 +57,7 @@ OUTPUT_BASE_RAW="$(grep 'output_base:' "$CONFIG_FILE" | awk '{print $2}' | tr -d
 OUTPUT_BASE=$(resolve_path "$OUTPUT_BASE_RAW")
 
 # Docker Images
-DOCKER_IMAGE="dreammaerd/numt_dsa:v1"
+DOCKER_IMAGE="dreammaerd/numt_dsa:v1.2"
 NFLO_IMAGE="dreammaerd/nf-lo:v3"
 
 mkdir -p "$OUTPUT_BASE/logs"

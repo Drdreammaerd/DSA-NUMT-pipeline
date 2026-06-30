@@ -1,0 +1,95 @@
+# ============================================================
+# NUMT DSA Pipeline — SVbyEye Plotter Module
+# Author: Yung-Chun Wang <yung-chun@wustl.edu>
+# ============================================================
+# This is a standalone, lightweight Docker image dedicated to 
+# generating publication-ready SVG plots for the NUMT pipeline.
+#
+# Build (from repo root):
+#   docker build --platform linux/amd64 -t dreammaerd/numt-plotter:v1 -f Docker/Dockerfile.plotter .
+#
+# Run (Plotting):
+#   docker run --rm -v $(pwd):/workspace dreammaerd/numt-plotter:v1 \
+#     python /opt/numt-plotter/visualization/generate_svbyeye_plots.py \
+#     --results-dir /workspace/results \
+#     --out-dir /workspace/results/SVbyEye_Plots \
+#     --r-script /opt/numt-plotter/visualization/plot_svbyeye_single.R
+# ============================================================
+
+FROM mambaorg/micromamba:1.5.1-jammy
+
+LABEL maintainer="Yung-Chun Wang <yung-chun@wustl.edu>"
+
+USER root
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=America/Chicago
+ENV MAMBA_ROOT_PREFIX=/opt/conda
+ENV PATH="/opt/conda/bin:${PATH}"
+
+# ---- System dependencies ----
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libcurl4-openssl-dev \
+    libxml2-dev \
+    libssl-dev \
+    libfontconfig1-dev \
+    libharfbuzz-dev \
+    libfribidi-dev \
+    libfreetype6-dev \
+    libpng-dev \
+    libtiff5-dev \
+    libjpeg-dev \
+    zlib1g-dev \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---- Conda environment ----
+USER $MAMBA_USER
+RUN micromamba install -y -n base -c conda-forge -c bioconda \
+    python=3.10 \
+    pandas \
+    r-base \
+    r-ggplot2 \
+    r-dplyr \
+    r-optparse \
+    r-devtools \
+    r-remotes \
+    r-pak \
+    r-data.table \
+    r-gggenes \
+    bioconductor-biostrings \
+    bioconductor-bsgenome \
+    bioconductor-genomicalignments \
+    bioconductor-rsamtools \
+    bioconductor-rtracklayer \
+    bioconductor-genomicranges \
+    && micromamba clean --all --yes
+
+# ---- GitHub R Packages ----
+# Install SVbyEye from GitHub using remotes (pak sometimes fails with system dependencies)
+# Pin to stable commit 5866e7f to avoid bind_cols bugs in recent master branch
+RUN Rscript -e "remotes::install_github('daewoooo/SVbyEye@5866e7f198b7827628aa95ea3bfa421986a0bbd8')"
+
+# ---- Bundle pipeline code ----
+# Copy only the visualization scripts to the container
+USER root
+COPY Pipeline/visualization /opt/numt-plotter/visualization/
+RUN chmod -R +x /opt/numt-plotter/visualization/
+
+# ---- Environment & Entrypoint ----
+WORKDIR /workspace
+
+RUN printf '#!/bin/bash\neval "$(micromamba shell hook --shell bash)"\nmicromamba activate base\nexec "$@"\n' \
+    > /usr/local/bin/entrypoint.sh && \
+    chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["/bin/bash"]
+
+# ============================================================
+# Dependency audit:
+#   - r-ggplot2   → Core rendering engine for vector graphics
+#   - SVbyEye     → Generates sequence alignment visualizations from PAF
+#   - python      → Pipeline controller (generate_svbyeye_plots.py)
+#   - pandas      → Parses numt_liftover.tsv for PAF slicing
+# ============================================================
