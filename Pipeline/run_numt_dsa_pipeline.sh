@@ -185,8 +185,8 @@ bsub -J "DSA_NUMT_Plotter" \
      -R "span[hosts=1] rusage[mem=4000]" \
      -a "docker(${PLOTTER_DOCKER})" \
      "python3 /opt/numt-dsa-pipeline/visualization/generate_svbyeye_plots.py \
-          --results-dir \"${OUTPUT_BASE}/results\" \
-          --out-dir \"${OUTPUT_BASE}/results/SVbyEye_Plots\" \
+          --results-dir \"${OUTPUT_BASE}\" \
+          --out-dir \"${OUTPUT_BASE}/SVbyEye_Plots\" \
           --r-script /opt/numt-dsa-pipeline/visualization/plot_svbyeye_single.R \
           --cores 16"
 
