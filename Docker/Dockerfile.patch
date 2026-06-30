@@ -1,2 +1,3 @@
 FROM dreammaerd/numt_dsa:v1.1
 COPY Pipeline/ /opt/numt-dsa-pipeline/
+RUN chmod -R a+rX /opt/numt-dsa-pipeline/

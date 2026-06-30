@@ -1,2 +1,3 @@
 FROM dreammaerd/numt-plotter:v1
 COPY Pipeline/visualization /opt/numt-plotter/visualization/
+RUN chmod -R a+rX /opt/numt-plotter/visualization/
