@@ -48,6 +48,15 @@ def parse_paf(paf_path):
             parts = line.strip().split('\t')
             if len(parts) < 12:
                 continue
+
+            # Structural classification MUST only use DNA alignments (chrM coordinates)
+            if parts[5] != 'chrM':
+                continue
+
+            # Filter noise alignments < 200bp to avoid fake structural variants
+            if int(parts[10]) < 200:
+                continue
+            
             alns.append({
                 'contig': parts[0],
                 'q_len': int(parts[1]),
@@ -66,7 +75,7 @@ def parse_paf(paf_path):
     return alns
 
 
-def cluster_loci(alns, gap=2000):
+def cluster_loci(alns, gap=1000):
     """Cluster alignments on the same contig within 'gap' bp."""
     by_contig = defaultdict(list)
     for a in alns:
@@ -89,63 +98,75 @@ def cluster_loci(alns, gap=2000):
 
 def classify_locus(cluster):
     """
-    Classify a single NUMT locus.
-
-    Returns: (category, detail_dict)
+    Classify a single NUMT locus by respecting the nuclear contig order.
     """
     n = len(cluster)
     strands = set(h['strand'] for h in cluster)
     total_mt = sum(h['mt_size'] for h in cluster)
     span = cluster[-1]['q_end'] - cluster[0]['q_start']
 
-    # Check for tandem repeats (identical chrM coordinates)
-    mt_coords = [(h['t_start'], h['t_end']) for h in cluster]
-    coord_counter = Counter(mt_coords)
-    has_tandem = any(v > 1 for v in coord_counter.values())
-    max_repeat = max(coord_counter.values()) if coord_counter else 1
+    sorted_by_q = sorted(cluster, key=lambda x: x['q_start'])
 
-    # Check chrM continuity
-    mt_sorted = sorted(mt_coords)
     is_continuous = True
+    is_tandem = False
     max_mt_gap = 0
+    nuclear_gaps = []
+    tandem_detail = ''
+
     if n >= 2:
-        for i in range(len(mt_sorted) - 1):
-            gap = mt_sorted[i + 1][0] - mt_sorted[i][1]
+        for i in range(len(sorted_by_q) - 1):
+            curr = sorted_by_q[i]
+            nxt = sorted_by_q[i + 1]
+
+            nuclear_gaps.append(nxt['q_start'] - curr['q_end'])
+
+            # If adjacent blocks have different strands, it's definitely a complex chimera
+            if curr['strand'] != nxt['strand']:
+                is_continuous = False
+                continue
+
+            # Check chrM coordinates order strictly relative to contig order
+            if curr['strand'] == '+':
+                gap = nxt['t_start'] - curr['t_end']
+            else:
+                # For minus strand insertions, a forward step in nuclear contig
+                # corresponds to a backward step in chrM.
+                gap = curr['t_start'] - nxt['t_end']
+
+            # Adjust for circularity of the mitochondrial genome (~16569 bp)
+            if gap < -16000:
+                gap += 16569
+            elif gap > 16000:
+                gap -= 16569
+
             max_mt_gap = max(max_mt_gap, abs(gap))
-            if abs(gap) > 500:
+
+            if gap < -100:
+                # Significant overlap in chrM means tandem duplication
+                is_tandem = True
+                is_continuous = False
+                tandem_detail = f"overlap_size:{abs(gap)}"
+            elif gap > 500:
+                # Massive jumping gap -> complex chimera
                 is_continuous = False
 
-    # Nuclear gaps
-    sorted_by_q = sorted(cluster, key=lambda x: x['q_start'])
-    nuclear_gaps = []
-    for i in range(len(sorted_by_q) - 1):
-        nuclear_gaps.append(sorted_by_q[i + 1]['q_start'] - sorted_by_q[i]['q_end'])
-
-    # Classify
+    # Classify according to new biological definitions
     if n == 1:
         category = 'A_single_block'
-    elif has_tandem:
-        category = 'D_tandem_repeat'
+    elif is_tandem:
+        category = 'C_tandem_repeat'
     elif len(strands) > 1:
-        category = 'C_inversion'
-    elif n >= 2 and is_continuous:
-        category = 'B_divergence_gap'
+        category = 'D_complex_structural_variant'
+    elif not is_continuous:
+        category = 'D_complex_structural_variant'
     else:
-        category = 'E_complex_chimeric'
+        category = 'B_divergence_gap'
 
     # Build chrM structure string
     mt_structure_parts = []
     for h in sorted_by_q:
         mt_structure_parts.append(f"{h['t_start']}-{h['t_end']}({h['strand']})")
     mt_structure = ';'.join(mt_structure_parts)
-
-    # Tandem detail
-    tandem_detail = ''
-    if has_tandem:
-        for coord, count in coord_counter.items():
-            if count > 1:
-                tandem_detail = f"chrM:{coord[0]}-{coord[1]}x{count}"
-                break
 
     detail = {
         'contig': cluster[0]['contig'],
@@ -174,8 +195,8 @@ def main():
                         help='Path to PAF file (overrides --sample)')
     parser.add_argument('--bed', default=None,
                         help='Path to BED file for filtering true NUMTs')
-    parser.add_argument('--gap', type=int, default=2000,
-                        help='Clustering gap in bp (default: 2000)')
+    parser.add_argument('--gap', type=int, default=1000,
+                        help='Clustering gap in bp (default: 1000)')
     parser.add_argument('--outdir', default=None,
                         help='Output directory (default: PROJECT_DIR/results/classification/)')
     args = parser.parse_args()
@@ -244,13 +265,12 @@ def main():
     cat_labels = {
         'A_single_block': 'A. Single-block',
         'B_divergence_gap': 'B. Divergence-gap (same strand, continuous chrM)',
-        'C_inversion': 'C. Inversion (mixed strands)',
-        'D_tandem_repeat': 'D. Tandem repeat (same chrM repeated)',
-        'E_complex_chimeric': 'E. Complex chimeric (different chrM regions)',
+        'C_tandem_repeat': 'C. Tandem repeat (same chrM repeated)',
+        'D_complex_structural_variant': 'D. Complex structural variant (inversions, chimeras)',
     }
 
     print("-" * 70)
-    for key in ['A_single_block', 'B_divergence_gap', 'C_inversion', 'D_tandem_repeat', 'E_complex_chimeric']:
+    for key in ['A_single_block', 'B_divergence_gap', 'C_tandem_repeat', 'D_complex_structural_variant']:
         count = category_counts.get(key, 0)
         pct = count / total * 100 if total > 0 else 0
         print(f"  {cat_labels[key]:<55} {count:>5}  ({pct:.1f}%)")
@@ -259,7 +279,7 @@ def main():
     simple = category_counts.get('A_single_block', 0) + category_counts.get('B_divergence_gap', 0)
     complex_sv = total - simple
     print(f"  Simple/Normal (A+B): {simple:>5}  ({simple / total * 100:.1f}%)")
-    print(f"  Complex SV (C+D+E): {complex_sv:>5}  ({complex_sv / total * 100:.1f}%)")
+    print(f"  Complex SV (C+D):    {complex_sv:>5}  ({complex_sv / total * 100:.1f}%)")
     print(f"  {'Total:':<55} {total:>5}")
     print()
 
@@ -281,7 +301,7 @@ def main():
     with open(complex_path, 'w') as f:
         f.write('\t'.join(cols) + '\n')
         for r in sorted(results, key=lambda x: (x['category'], -x['total_mt_coverage'])):
-            if r['category'] in ('C_inversion', 'D_tandem_repeat', 'E_complex_chimeric'):
+            if r['category'] in ('C_tandem_repeat', 'D_complex_structural_variant'):
                 f.write('\t'.join(str(r[c]) for c in cols) + '\n')
 
     print(f"Complex SV only:     {complex_path}")
