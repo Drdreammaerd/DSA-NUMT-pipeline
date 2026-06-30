@@ -3,7 +3,8 @@ import pandas as pd
 
 configfile: "config/config.yaml"
 OUT_DIR = config.get("output_base", "results")
-DOCKER_IMAGE = config.get("docker_image", "dreammaerd/numt_dsa:v1")
+DOCKER_IMAGE = config.get("docker_image", "dreammaerd/numt_dsa:v1.1")
+PLOTTER_DOCKER_IMAGE = config.get("plotter_image", "dreammaerd/numt-plotter:v1")
 PIPELINE_DIR = workflow.basedir
 
 SAMPLE_SHEET = pd.read_csv(config["sample_sheet"], sep="\t")
@@ -34,7 +35,8 @@ def get_chain_dir(sample):
 
 rule all:
     input:
-        OUT_DIR + "/05_final_callset/HPRC_NUMT_callset.tsv"
+        OUT_DIR + "/05_final_callset/HPRC_NUMT_callset.tsv",
+        OUT_DIR + "/SVbyEye_Plots/.plot_done"
 
 rule build_mito_dbs:
     input:
@@ -300,3 +302,21 @@ rule final_callset:
         docker=DOCKER_IMAGE
     shell:
         "python3 {PIPELINE_DIR}/scripts/06_generate_callset.py --sample_sheet {input.sample_sheet} --input_tsv {input.unified} --outdir {params.outdir}"
+
+rule plot_svbyeye:
+    input:
+        tsv=OUT_DIR + "/05_final_callset/HPRC_NUMT_callset.tsv"
+    output:
+        done=touch(OUT_DIR + "/SVbyEye_Plots/.plot_done")
+    params:
+        outdir=OUT_DIR + "/SVbyEye_Plots"
+    resources:
+        mem_mb=8000,
+        docker=PLOTTER_DOCKER_IMAGE
+    shell:
+        """
+        python3 {PIPELINE_DIR}/visualization/generate_svbyeye_plots.py \
+          --results-dir {OUT_DIR} \
+          --out-dir {params.outdir} \
+          --r-script {PIPELINE_DIR}/visualization/plot_svbyeye_single.R
+        """
