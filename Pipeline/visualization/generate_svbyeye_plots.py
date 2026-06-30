@@ -68,9 +68,9 @@ def process_single_locus(row_data, args, sample, haplotype):
         print(f"  [SKIP] {pdf_filename} already exists.")
         return
         
-    # Locate original PAF file
-    paf_file = os.path.join(args.results_dir, "01_classification", f"{sample}.numt_classification.annotated.tsv")
-    paf_file = paf_file.replace("01_classification", "data/paf").replace(".numt_classification.annotated.tsv", "_combined.paf")
+    # Locate original PAF file in config_dir/data/paf/
+    config_dir = os.path.dirname(os.path.normpath(args.results_dir))
+    paf_file = os.path.join(config_dir, "data", "paf", f"{sample}.{haplotype}_combined.paf")
     
     if not os.path.exists(paf_file):
         print(f"  [WARN] Missing PAF: {paf_file}")
