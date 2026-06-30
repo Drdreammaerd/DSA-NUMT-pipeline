@@ -234,7 +234,7 @@ rule run_liftover:
         mem_mb=16000,
         docker=DOCKER_IMAGE
     shell:
-        "Rscript {params.r_script} --bed_file {input.bed} --chain {input.chain} --output {output.lo_bed} --id_col 4"
+        "Rscript {params.r_script} --bed_file {input.bed} --chain {input.chain} --output {output.lo_bed}"
 
 rule join_liftover:
     input:
