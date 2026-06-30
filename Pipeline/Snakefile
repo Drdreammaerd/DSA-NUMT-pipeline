@@ -35,8 +35,7 @@ def get_chain_dir(sample):
 
 rule all:
     input:
-        OUT_DIR + "/05_final_callset/HPRC_NUMT_callset.tsv",
-        OUT_DIR + "/SVbyEye_Plots/.plot_done"
+        OUT_DIR + "/05_final_callset/HPRC_NUMT_callset.tsv"
 
 rule build_mito_dbs:
     input:
@@ -271,20 +270,4 @@ rule final_callset:
     shell:
         "python3 {PIPELINE_DIR}/scripts/06_generate_callset.py --sample_sheet {input.sample_sheet} --input_tsv {input.unified} --outdir {params.outdir}"
 
-rule plot_svbyeye:
-    input:
-        tsv=OUT_DIR + "/05_final_callset/HPRC_NUMT_callset.tsv"
-    output:
-        done=touch(OUT_DIR + "/SVbyEye_Plots/.plot_done")
-    params:
-        outdir=OUT_DIR + "/SVbyEye_Plots"
-    resources:
-        mem_mb=8000,
-        docker=PLOTTER_DOCKER_IMAGE
-    shell:
-        """
-        python3 {PIPELINE_DIR}/visualization/generate_svbyeye_plots.py \
-          --results-dir {OUT_DIR} \
-          --out-dir {params.outdir} \
-          --r-script {PIPELINE_DIR}/visualization/plot_svbyeye_single.R
-        """
+

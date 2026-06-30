@@ -57,7 +57,7 @@ OUTPUT_BASE_RAW="$(grep 'output_base:' "$CONFIG_FILE" | awk '{print $2}' | tr -d
 OUTPUT_BASE=$(resolve_path "$OUTPUT_BASE_RAW")
 
 # Docker Images
-DOCKER_IMAGE="dreammaerd/numt_dsa:v1.2"
+DOCKER_IMAGE="dreammaerd/numt_dsa:v1.3"
 NFLO_IMAGE="dreammaerd/nf-lo:v3"
 
 mkdir -p "$OUTPUT_BASE/logs"
@@ -143,7 +143,7 @@ fi
 
 rm -rf "${OUTPUT_BASE}/.snakemake/locks" 2>/dev/null || true
 
-bsub -J "DSA_NUMT_Orchestrator" \
+BSUB_ORCH=$(bsub -J "DSA_NUMT_Orchestrator" \
      -o "${OUTPUT_BASE}/DSA_NUMT_Pipeline_%J.log" -e "${OUTPUT_BASE}/DSA_NUMT_Pipeline_%J.err" \
      -G "$LSF_GROUP" -q "$LSF_QUEUE" -n 1 \
      -R "span[hosts=1] rusage[mem=8000]" \
@@ -168,7 +168,27 @@ bsub -J "DSA_NUMT_Orchestrator" \
          --rerun-incomplete \
          --keep-going \
          --envvars XDG_CACHE_HOME XDG_CONFIG_HOME MPLCONFIGDIR \
-         "${SNAKEMAKE_ARGS[@]:+${SNAKEMAKE_ARGS[@]}}"
+         "${SNAKEMAKE_ARGS[@]:+${SNAKEMAKE_ARGS[@]}}")
+
+ORCH_JOB_ID=$(echo "$BSUB_ORCH" | grep -oE '[0-9]+' | head -n 1)
+echo "  - Submitted Orchestrator -> Job ID: ${ORCH_JOB_ID}"
+
+echo ""
+echo "[3] Submitting SVbyEye Plotter..."
+
+PLOTTER_DOCKER="dreammaerd/numt-plotter:v1.3"
+
+bsub -J "DSA_NUMT_Plotter" \
+     -o "${OUTPUT_BASE}/logs/SVbyEye_Plotter_%J.log" -e "${OUTPUT_BASE}/logs/SVbyEye_Plotter_%J.err" \
+     -G "$LSF_GROUP" -q "$LSF_QUEUE" -n 16 \
+     -w "done($ORCH_JOB_ID)" \
+     -R "span[hosts=1] rusage[mem=4000]" \
+     -a "docker(${PLOTTER_DOCKER})" \
+     "python3 /opt/numt-dsa-pipeline/visualization/generate_svbyeye_plots.py \
+          --results-dir \"${OUTPUT_BASE}/results\" \
+          --out-dir \"${OUTPUT_BASE}/results/SVbyEye_Plots\" \
+          --r-script /opt/numt-dsa-pipeline/visualization/plot_svbyeye_single.R \
+          --cores 16"
 
 echo ""
 echo "============================================================"
