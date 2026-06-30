@@ -211,51 +211,19 @@ rule blast_validation:
         fi
         """
 
-rule prep_liftover_bed:
-    input:
-        tsv=OUT_DIR + "/01_classification/{sample}.numt_classification.annotated.tsv"
-    output:
-        bed=temp(OUT_DIR + "/02_liftover/{sample}_input.bed")
-    resources:
-        mem_mb=4000,
-        docker=DOCKER_IMAGE
-    shell:
-        "tail -n +2 {input.tsv} | awk -F'\t' '{{print $$1\"\t\"$$2\"\t\"$$3\"\t\"NR}}' > {output.bed}"
-
 rule run_liftover:
     input:
-        bed=OUT_DIR + "/02_liftover/{sample}_input.bed",
+        tsv=OUT_DIR + "/01_classification/{sample}.numt_classification.annotated.tsv",
         chain=lambda wildcards: f"{CHAIN_DIR}/{get_chain_dir(wildcards.sample)}/chainnet/liftover.chain"
     output:
-        lo_bed=temp(OUT_DIR + "/02_liftover/{sample}_hg38_raw.bed")
+        final_tsv=OUT_DIR + "/02_liftover/{sample}.classification_hg38.tsv"
     params:
         r_script=f"{PIPELINE_DIR}/scripts/03_liftover.R"
     resources:
         mem_mb=16000,
         docker=DOCKER_IMAGE
     shell:
-        "Rscript {params.r_script} --bed_file {input.bed} --chain {input.chain} --output {output.lo_bed}"
-
-rule join_liftover:
-    input:
-        lo_bed=OUT_DIR + "/02_liftover/{sample}_hg38_raw.bed",
-        tsv=OUT_DIR + "/01_classification/{sample}.numt_classification.annotated.tsv"
-    output:
-        final_tsv=OUT_DIR + "/02_liftover/{sample}.classification_hg38.tsv"
-    resources:
-        mem_mb=8000,
-        docker=DOCKER_IMAGE
-    shell:
-        """
-        ORIG_HEADER=$(head -1 {input.tsv})
-        printf 'hg38_chr\thg38_start\thg38_end\t%s\n' "$ORIG_HEADER" > {output.final_tsv}
-        while IFS=$'\t' read -r hg38_chr hg38_start hg38_end row_id; do
-            class_line=$(sed -n "$((row_id + 1))p" {input.tsv})
-            if [[ -n "$class_line" ]]; then
-                printf '%s\t%s\t%s\t%s\n' "$hg38_chr" "$hg38_start" "$hg38_end" "$class_line"
-            fi
-        done < {input.lo_bed} >> {output.final_tsv}
-        """
+        "Rscript {params.r_script} --bed_file {input.tsv} --chain {input.chain} --output {output.final_tsv}"
 
 rule merge_haplotypes:
     input:
